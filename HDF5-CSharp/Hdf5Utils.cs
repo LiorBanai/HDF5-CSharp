@@ -213,7 +213,7 @@ namespace HDF5CSharp
                     return (string.Empty, false);
                 }
 
-                var value = Hdf5.ReadAttribute<string>(groupAccessId, attributeName);
+                var value = Hdf5.ReadAttribute(groupAccessId, attributeName);
                 return (value, true);
             }
             catch (Exception e)
@@ -229,7 +229,67 @@ namespace HDF5CSharp
                 }
             }
         }
+
+        public static (string[] Values, bool Success) ReadAttributesByPath(string fileName, string xpath, string attributeName)
+        {
+            long fileId = -1;
+
+            try
+            {
+                var fileStructure = Hdf5.ReadFlatFileStructureWithoutAttributes(fileName);
+                fileId = Hdf5.OpenFile(fileName, true);
+                if (fileId <= 0)
+                {
+                    LogMessage("Invalid type", Hdf5LogLevel.Error);
+                    return ([], false);
+                }
+
+                var group = fileStructure.SingleOrDefault(element => element.Name == xpath);
+                if (group == null)
+                {
+                    LogMessage($"group {xpath} was not found", Hdf5LogLevel.Error);
+                    return ([], false);
+                }
+
+                var groupAccessId = H5G.open(fileId, group.Name);
+                if (groupAccessId <= 0)
+                {
+                    LogMessage($"unable to open group: {group.Name}", Hdf5LogLevel.Error);
+                    return ([], false);
+                }
+
+                var value = Hdf5.ReadAttributes<string>(groupAccessId, attributeName, true);
+                return (value.Result.Cast<string>().ToArray(), value.Success);
+            }
+            catch (Exception e)
+            {
+                LogMessage($"Error reading Attribute: {e.Message}", Hdf5LogLevel.Error);
+                return ([], false);
+            }
+            finally
+            {
+                if (fileId > 0)
+                {
+                    H5F.close(fileId);
+                }
+            }
+        }
+
         public static bool WriteAttributeByPath(string fileName, string xpath, string attributeName, string value)
+        {
+            var funcWriteAttribute = (long groupAccessId) => Hdf5.WriteAttribute(groupAccessId, attributeName, value);
+
+            return WriteAttributeByPath(fileName, xpath, funcWriteAttribute);
+        }
+
+        public static bool WriteAttributesByPath(string fileName, string xpath, string attributeName, string value)
+        {
+            var funcWriteAttribute = (long groupAccessId) => Hdf5.WriteAttributes(groupAccessId, attributeName, value);
+
+            return WriteAttributeByPath(fileName, xpath, funcWriteAttribute);
+        }
+
+        private static bool WriteAttributeByPath(string fileName, string xpath, Func<long, (int Success, long CreatedId)> funcWriteAttribute)
         {
             long fileId = -1;
 
@@ -257,7 +317,7 @@ namespace HDF5CSharp
                     return false;
                 }
 
-                var result = Hdf5.WriteAttribute(groupAccessId, attributeName, value);
+                var result = funcWriteAttribute(groupAccessId);
                 return result.Success >= 0;
             }
             catch (Exception e)
