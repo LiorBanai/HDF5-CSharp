@@ -521,21 +521,34 @@ namespace HDF5CSharp
 
         private static object ReadAttributeData(IH5Attribute attribute)
         {
-            return (attribute.Type.Class, attribute.Type.Size) switch
+            return (attribute.Space.Type, attribute.Type.Class, attribute.Type.Size) switch
             {
-                (H5DataTypeClass.FloatingPoint, 4) => attribute.Read<float[]>(),
-                (H5DataTypeClass.FloatingPoint, 8) => attribute.Read<double[]>(),
-                (H5DataTypeClass.FixedPoint, 1) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<byte[]>(),
-                (H5DataTypeClass.FixedPoint, 1) when attribute.Type.FixedPoint.IsSigned => attribute.Read<sbyte[]>(),
-                (H5DataTypeClass.FixedPoint, 2) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<ushort[]>(),
-                (H5DataTypeClass.FixedPoint, 2) when attribute.Type.FixedPoint.IsSigned => attribute.Read<short[]>(),
-                (H5DataTypeClass.FixedPoint, 4) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<uint[]>(),
-                (H5DataTypeClass.FixedPoint, 4) when attribute.Type.FixedPoint.IsSigned => attribute.Read<int[]>(),
-                (H5DataTypeClass.FixedPoint, 8) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<ulong[]>(),
-                (H5DataTypeClass.FixedPoint, 8) when attribute.Type.FixedPoint.IsSigned => attribute.Read<long[]>(),
-                (H5DataTypeClass.VariableLength, _) => attribute.Read<string[]>(),
-                (H5DataTypeClass.String, _) => attribute.Read<string[]>(),
-                (H5DataTypeClass.Compound, _) => attribute.Read<Dictionary<string, object>>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FloatingPoint, 4) => attribute.Read<float>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FloatingPoint, 8) => attribute.Read<double>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 1) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<byte>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 1) when attribute.Type.FixedPoint.IsSigned => attribute.Read<sbyte>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 2) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<ushort>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 2) when attribute.Type.FixedPoint.IsSigned => attribute.Read<short>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 4) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<uint>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 4) when attribute.Type.FixedPoint.IsSigned => attribute.Read<int>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 8) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<ulong>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.FixedPoint, 8) when attribute.Type.FixedPoint.IsSigned => attribute.Read<long>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.VariableLength, _) => attribute.Read<string>(),
+                (H5DataspaceType.Scalar, H5DataTypeClass.String, _) => attribute.Read<string>(),
+                (H5DataspaceType.Scalar,  H5DataTypeClass.Compound, _) => attribute.Read<Dictionary<string, object>>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FloatingPoint, 4) => attribute.Read<float[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FloatingPoint, 8) => attribute.Read<double[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 1) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<byte[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 1) when attribute.Type.FixedPoint.IsSigned => attribute.Read<sbyte[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 2) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<ushort[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 2) when attribute.Type.FixedPoint.IsSigned => attribute.Read<short[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 4) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<uint[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 4) when attribute.Type.FixedPoint.IsSigned => attribute.Read<int[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 8) when !attribute.Type.FixedPoint.IsSigned => attribute.Read<ulong[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.FixedPoint, 8) when attribute.Type.FixedPoint.IsSigned => attribute.Read<long[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.VariableLength, _) => attribute.Read<string[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.String, _) => attribute.Read<string[]>(),
+                (H5DataspaceType.Simple, H5DataTypeClass.Compound, _) => attribute.Read<Dictionary<string, object>>(),
 
                 // Other types might currently be a bit difficult to read automatically.
                 // However, in future it will be possible to also read unknown data by simply
@@ -546,7 +559,7 @@ namespace HDF5CSharp
                 // being exposed in the public API. E.g. some types like "Array" or "Enum"
                 // have base type information (e.g. an Enum value could be based on a uint16
                 // value) which would allow you to read these kind of attributes, too.
-                _ => $"The type class {attribute.Type.Class} is currently not supported.",
+                _ => $"The type {attribute.Space.Type}, class {attribute.Type.Class}, size {attribute.Type.Size} is currently not supported.",
             };
         }
 

@@ -86,21 +86,119 @@ namespace HDF5CSharp
             return attributes;
         }
 
-        public static (bool Success, Array Result) ReadAttributes<T>(long groupId, string name, bool mandatory)
+        public static (bool Success, Array Result) ReadAttributes<T>(long groupId, string name, bool mandatory = true)
         {
             return attrRW.ReadArray<T>(groupId, name, string.Empty, mandatory);
         }
+
         public static T ReadAttribute<T>(long groupId, string name)
+            where T : struct
         {
-            var attrs = attrRW.ReadArray<T>(groupId, name, string.Empty, false);
-            if (!attrs.Success)
+            Type type = typeof(T);
+            var datatype = GetDatatype(type);
+            var attributeId = OpenAttributeIfExists(groupId, Hdf5Utils.NormalizedName(name), string.Empty);
+
+            if (attributeId <= 0)
             {
-                Hdf5Utils.LogMessage($"{name} was not found", Hdf5LogLevel.Error);
+                string error = $"Error reading {groupId}. Name:{name}";
+                Hdf5Utils.LogMessage(error, Hdf5LogLevel.Warning);
+                if (Settings.ThrowOnNonExistNameWhenReading)
+                {
+                    Hdf5Utils.LogMessage(error, Hdf5LogLevel.Error);
+                    throw new Hdf5Exception(error);
+                }
                 return default;
             }
-            int[] first = new int[attrs.Result.Rank].Select(f => 0).ToArray();
-            T result = (T)attrs.Result.GetValue(first);
-            return result;
+            var spaceId = H5A.get_space(attributeId);
+            T attribute = default;
+
+            var typeId = H5A.get_type(attributeId);
+
+            if (datatype == H5T.C_S1)
+            {
+                H5T.set_size(datatype, new IntPtr(2));
+            }
+
+            int typeSize = Marshal.SizeOf(typeof(T));
+            IntPtr buffer = Marshal.AllocHGlobal(typeSize);
+            H5A.read(attributeId, datatype, buffer);
+
+            var byteArray = new byte[typeSize];
+            Marshal.Copy(buffer, byteArray, 0, typeSize);
+            attribute = HomeMadeConverter(byteArray, attribute);
+
+            H5T.close(typeId);
+            H5A.close(attributeId);
+            H5S.close(spaceId);
+
+            return attribute;
+        }
+
+        private static T HomeMadeConverter<T>(byte[] byteArray, T obj)
+        {
+            return obj switch
+            {
+                int => (T)(object)BitConverter.ToInt32(byteArray, 0),
+                uint => (T)(object)BitConverter.ToUInt32(byteArray, 0),
+                long => (T)(object)BitConverter.ToInt64(byteArray, 0),
+                ulong => (T)(object)BitConverter.ToUInt64(byteArray, 0),
+                double => (T)(object)BitConverter.ToDouble(byteArray, 0),
+                float => (T)(object)BitConverter.ToSingle(byteArray, 0),
+                short => (T)(object)BitConverter.ToInt16(byteArray, 0),
+                ushort => (T)(object)BitConverter.ToUInt16(byteArray, 0),
+                byte => (T)(object)byteArray[0],
+                sbyte => (T)(object)(sbyte)byteArray[0],
+                string => (T)(object)System.Text.Encoding.Default.GetString(byteArray),
+                _ => throw new NotSupportedException($"The type is {typeof(T)} is not currently supported."),
+            };
+        }
+
+        public static string ReadAttribute(long groupId, string name)
+        {
+            var attributeId = OpenAttributeIfExists(groupId, Hdf5Utils.NormalizedName(name), string.Empty);
+
+            if (attributeId <= 0)
+            {
+                string error = $"Error reading {groupId}. Name:{name}";
+                Hdf5Utils.LogMessage(error, Hdf5LogLevel.Warning);
+                if (Settings.ThrowOnNonExistNameWhenReading)
+                {
+                    Hdf5Utils.LogMessage(error, Hdf5LogLevel.Error);
+                    throw new Hdf5Exception(error);
+                }
+                return string.Empty;
+            }
+            var typeId = H5A.get_type(attributeId);
+
+            try
+            {
+                var sizeData = H5T.get_size(typeId);
+                var size = sizeData.ToInt32();
+                byte[] strBuffer = new byte[size];
+
+                var aTypeMem = H5T.get_native_type(typeId, H5T.direction_t.ASCEND);
+                GCHandle pinnedArray = GCHandle.Alloc(strBuffer, GCHandleType.Pinned);
+                H5A.read(attributeId, aTypeMem, pinnedArray.AddrOfPinnedObject());
+                pinnedArray.Free();
+                H5T.close(aTypeMem);
+
+                var value = System.Text.Encoding.UTF8.GetString(strBuffer);
+
+                return value;
+            }
+            catch (Exception ex)
+            {
+                return string.Empty;
+            }
+            finally
+            {
+                H5A.close(attributeId);
+
+                if (typeId > 0)
+                {
+                    H5T.close(typeId);
+                }
+            }
         }
 
         public static (bool Success, IEnumerable<string> Items) ReadStringAttributes(long groupId, string name, string alternativeName, bool mandatory)
@@ -123,8 +221,8 @@ namespace HDF5CSharp
             long count = H5S.get_simple_extent_npoints(spaceId);
             H5S.close(spaceId);
 
-            IntPtr[] rdata = new IntPtr[count];
-            GCHandle hnd = GCHandle.Alloc(rdata, GCHandleType.Pinned);
+            IntPtr[] rdata = new IntPtr[count]; // create a pointer list
+            GCHandle hnd = GCHandle.Alloc(rdata, GCHandleType.Pinned); // pin the array of in memory in order to be sure that the GC does not move it since unmanaged code might access it
             H5A.read(datasetId, typeId, hnd.AddrOfPinnedObject());
 
             var strs = new List<string>();
@@ -202,6 +300,7 @@ namespace HDF5CSharp
         {
             return WriteStringAttributes(groupId, name, new[] { val }, groupOrDatasetName);
         }
+
         public static (int Success, long CreatedId) WriteIntegerAttributes<T>(long groupId, string name, IEnumerable<T> values, string groupOrDatasetName = null) where T : struct
         {
             long tmpId = groupId;
@@ -371,12 +470,12 @@ namespace HDF5CSharp
             return (result, attributeId);
         }
 
-        public static (int Success, long CreatedId) WriteAttribute<T>(long groupId, string name, T attribute) //where T : struct
+        public static (int Success, long CreatedId) WriteAttributes<T>(long groupId, string name, T attribute) //where T : struct
         {
             return WriteAttributes<T>(groupId, name, new T[1] { attribute });
         }
 
-        public static (int Success, long CreatedId) WriteAttributes<T>(long groupId, string name, Array attributes) //
+        public static (int Success, long CreatedId) WriteAttributes<T>(long groupId, string name, Array attributes)
         {
             return attrRW.WriteArray(groupId, name, attributes, new Dictionary<string, List<string>>());
 
@@ -411,6 +510,120 @@ namespace HDF5CSharp
                 H5D.close(groupId);
             }
             return (result, attributeId);
+        }
+
+        public static (int Success, long CreatedId) WriteAttribute(long groupId, string name, string value)
+        {
+            long attributeSpace = 0;
+            long stringId = 0;
+            long attributeId = 0;
+
+            try
+            {
+                attributeSpace = H5S.create(H5S.class_t.SCALAR);
+                stringId = H5T.copy(H5T.C_S1);
+                H5T.set_size(stringId, new IntPtr(value.Length));
+                attributeId = H5A.create(groupId, name, stringId, attributeSpace);
+
+                //H5P.set_char_encoding(attributeId, H5T.cset_t.UTF8);
+
+                IntPtr descriptionArray = Marshal.StringToHGlobalAnsi(value);
+
+                //IntPtr descriptionArray2 = Marshal.StringToHGlobalUni(value);
+                var result = H5A.write(attributeId, stringId, descriptionArray);
+
+                Marshal.FreeHGlobal(descriptionArray);
+
+                return (result, attributeId);
+            }
+            catch (Exception ex)
+            {
+                return (-1, attributeId);
+            }
+            finally
+            {
+                if (attributeId != 0)
+                {
+                    H5A.close(attributeId);
+                }
+
+                if (stringId != 0)
+                {
+                    H5T.close(stringId);
+                }
+
+                if (attributeSpace != 0)
+                {
+                    H5S.close(attributeSpace);
+                }
+            }
+        }
+
+        public static (int Success, long CreatedId) WriteAttribute<T>(long groupId, string name, T value)
+            where T : struct
+        {
+            long attributeSpace = 0;
+            long typeId = 0;
+            long attributeId = 0;
+
+            try
+            {
+                attributeSpace = H5S.create(H5S.class_t.SCALAR);
+                typeId = H5T.copy(GetHdfType(value));
+                H5T.set_size(typeId, new IntPtr(Marshal.SizeOf<T>()));
+                attributeId = H5A.create(groupId, name, typeId, attributeSpace);
+
+                GCHandle handle = GCHandle.Alloc(value, GCHandleType.Pinned);
+                IntPtr ptr = handle.AddrOfPinnedObject();
+                var result = H5A.write(attributeId, typeId, ptr);
+
+                handle.Free();
+
+                return (result, attributeId);
+            }
+            catch (Exception ex)
+            {
+                return (-1, attributeId);
+            }
+            finally
+            {
+                if (attributeId != 0)
+                {
+                    H5A.close(attributeId);
+                }
+
+                if (typeId != 0)
+                {
+                    H5T.close(typeId);
+                }
+
+                if (attributeSpace != 0)
+                {
+                    H5S.close(attributeSpace);
+                }
+            }
+        }
+
+        private static long GetHdfType<T>(T value)
+        {
+            return value switch
+            {
+                // bool, decimal and char does not work for writing
+                //bool => H5T.NATIVE_HBOOL,
+                //decimal => H5T.NATIVE_LDOUBLE,
+                //char => H5T.NATIVE_CHAR,
+                byte => H5T.NATIVE_UINT8,
+                sbyte => H5T.NATIVE_INT8,
+                double => H5T.NATIVE_DOUBLE,
+                float => H5T.NATIVE_FLOAT,
+                int => H5T.NATIVE_INT,
+                uint => H5T.NATIVE_UINT,
+                long => H5T.NATIVE_LLONG,
+                ulong => H5T.NATIVE_ULLONG,
+                short => H5T.NATIVE_SHORT,
+                ushort => H5T.NATIVE_USHORT,
+                _ => throw new NotSupportedException(),
+            };
         }
     }
 }
