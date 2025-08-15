@@ -64,6 +64,9 @@
 		<None Update="files\testfile2.h5">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="files\testAttribute.HDF5">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 		<None Update="files\TEST_TREE.h5">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
