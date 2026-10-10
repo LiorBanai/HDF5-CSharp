@@ -67,16 +67,25 @@ jobs:
     needs: build
     if: ${{ github.event_name == 'push'}}  
     runs-on: windows-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: 'Download Artifact'
         uses: actions/download-artifact@v4.1.8
         with:
           name: artifactory_Release
+      - name: 'NuGet login (OIDC)'
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: LiorBanai
       - name: 'Dotnet NuGet Push'
         run: |
           Get-ChildItem ./ -Filter *.nupkg |
           Where-Object { !$_.Name.Contains('preview') } |
-          ForEach-Object { dotnet nuget push $_ --source https://api.nuget.org/v3/index.json --skip-duplicate --api-key ${{secrets.NUGET_API_KEY}} }
+          ForEach-Object { dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --skip-duplicate --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" }
         shell: pwsh
                 
       - name: Setup NuGet.exe for use with actions
